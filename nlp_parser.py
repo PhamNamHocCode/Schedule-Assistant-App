@@ -3,9 +3,7 @@ from datetime import datetime, timedelta
 from underthesea import word_tokenize, ner
 from dateutil.parser import parse as dateutil_parse
 
-# ======================================================================
-# BƯỚC 1: PREPROCESSING (RULE) - Giữ nguyên phiên bản tốt nhất của bạn
-# ======================================================================
+# BƯỚC 1: PREPROCESSING (RULE)
 def preprocess(text: str) -> str:
     """Bước 1: Chuẩn hóa text"""
     text = text.lower().strip()
@@ -41,9 +39,7 @@ def preprocess(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# ======================================================================
-# COMPONENT 2: MODEL-BASED (NER) - Thêm lại hàm này
-# ======================================================================
+# COMPONENT 2: MODEL-BASED (NER)
 def extract_ner_entities(text: str) -> tuple[dict, str]:
     """
     Component 2: Model-based (NER) để nhận diện thực thể.
@@ -88,45 +84,44 @@ def extract_ner_entities(text: str) -> tuple[dict, str]:
     for time_str in entities["TIME"]:
         remaining_text = remaining_text.replace(time_str, '', 1) # Chỉ thay thế 1 lần
     for loc_str in entities["LOCATION"]:
-        remaining_text = remaining_text.replace(loc_str, '', 1) # Chỉ thay thế 1 lần
+        remaining_text = remaining_text.replace(loc_str, '', 1)
     
     remaining_text = re.sub(r'\s+', ' ', remaining_text).strip()
     return entities, remaining_text
 
-# ======================================================================
-# COMPONENT 3: RULE-BASED EXTRACTORS - Giữ nguyên
-# ======================================================================
 
+# COMPONENT 3: RULE-BASED EXTRACTORS
 def extract_time_info(text: str) -> tuple[str, str]:
-    """(Rule-based) Trích xuất cụm thời gian (Phiên bản nâng cấp V2).
+    """(Rule-based) Trích xuất cụm thời gian (Phiên bản nâng cấp V3).
 
-    Sử dụng "glue" pattern để xử lý các từ nối như 'lúc', 'vào'.
-    Ưu tiên các pattern dài nhất, đầy đủ nhất (greedy) trước.
+    Sửa lỗi "phân mảnh" (fragmentation) bằng cách định nghĩa 2 loại
+    separator: p_sep (khoảng trắng) và p_sep_with_glue (cho phép "lúc", "vào").
     """
 
     # Định nghĩa các phần cơ bản của một cụm thời gian
-    # (re.IGNORECASE sẽ được dùng)
-    p_time = r'\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}'  # 10h, 10:30, 8 gio
-    p_period = r'sáng|sang|trưa|trua|chiều|chieu|tối|toi' # sáng, tối...
-    p_day = r'ngày_mai|mai|hôm_nay|nay|ngày_kia|kia|thứ_\w+|chủ_nhật|cuối_tuần' # ngày mai, thứ_bảy, cuối_tuần
-    p_modifier = r'tuần_sau|tuần_tới|tới|toi|này|nay|sau' # tuần sau, tới, này
+    p_time = r'\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}'  # 10h, 10:30
+    p_period = r'sáng|sang|trưa|trua|chiều|chieu|tối|toi' # sáng, tối
+    p_day = r'ngày_mai|mai|hôm_nay|nay|ngày_kia|kia|thứ_\w+|chủ_nhật|cuối_tuần' # ngày mai, thứ_bảy
+    p_modifier = r'tuần_sau|tuần_tới|tới|toi|này|nay|sau' # tuần sau, tới
     
-    # === SỬA LỖI: Thêm "Glue" Pattern ===
-    # Đây là "chất kết dính" giữa các phần, cho phép từ "lúc", "vào"
-    p_glue = r'\s*(?:lúc|luc|vào|vao)?\s*'
-
+    p_sep = r'\s+'
+    # p_sep_with_glue: Khoảng trắng có thể chứa "lúc", "vào"
+    p_sep_with_glue = r'(?:\s+(?:lúc|luc|vào|vao)?\s+)'
+    
     # Sắp xếp các pattern từ DÀI NHẤT/PHỨC TẠP NHẤT đến NGẮN NHẤT
     # (?i) = Bật cờ IGNORECASE
     time_patterns = [
         # 1. Full combo (Time + Period + Day + Mod): "10h sáng thứ_năm tuần_sau"
-        # 2. Full combo (Day + Mod + Time + Period): "thứ_bảy tới lúc 8h tối" (Sửa: thêm p_glue)
+        fr'(?i)((?:{p_time})\s*(?:{p_period})?{p_sep}(?:{p_day})\s*(?:{p_modifier})?)',
+        
+        # 2. Full combo (Day + Mod + Time + Period): "thứ_bảy tới lúc 8h tối"
+        fr'(?i)((?:{p_day})\s*(?:{p_modifier})?{p_sep_with_glue}(?:{p_time})\s*(?:{p_period})?)',
+        
         # 3. Full combo (Period + Day + Mod): "sáng thứ_năm tuần_sau"
-        fr'(?i)((?:{p_time})\s*(?:{p_period})?{p_glue}(?:{p_day})\s*(?:{p_modifier})?)',
-        fr'(?i)((?:{p_day})\s*(?:{p_modifier})?{p_glue}(?:{p_time})\s*(?:{p_period})?)',
-        fr'(?i)((?:{p_period})\s+(?:{p_day})\s*(?:{p_modifier})?)',
+        fr'(?i)((?:{p_period}){p_sep}(?:{p_day})\s*(?:{p_modifier})?)',
 
-        # 4. Day + Time (no period): "thứ_năm tuần_sau 8h", "cuối_tuần 7h" (Sửa: thêm p_glue)
-        fr'(?i)((?:{p_day})\s*(?:{p_modifier})?{p_glue}(?:{p_time}))',
+        # 4. Day + Time (no period): "thứ_năm tuần_sau 8h", "cuối_tuần 7h"
+        fr'(?i)((?:{p_day})\s*(?:{p_modifier})?{p_sep_with_glue}(?:{p_time}))',
 
         # 5. Day + Mod (no time): "thứ_năm tuần_sau", "thứ 6 này"
         fr'(?i)((?:{p_day})\s+(?:{p_modifier}))',
@@ -148,16 +143,13 @@ def extract_time_info(text: str) -> tuple[str, str]:
         m = re.search(pattern, text)
         if not m:
             continue
-
         # Đã tìm thấy match dài nhất phù hợp
         try:
-            # Luôn lấy group(1) vì chúng ta đã bọc toàn bộ pattern trong ( )
             time_str = m.group(1) 
             start, end = m.span(1)
         except IndexError:
-            continue # Lỗi không mong muốn, thử pattern tiếp theo
+            continue
 
-        # Cắt chính xác phần thời gian khỏi chuỗi (dùng span)
         remaining = text[:start] + text[end:]
         remaining = re.sub(r'\s+', ' ', remaining).strip()
         
@@ -201,9 +193,7 @@ def extract_reminder(text: str) -> tuple[int, str]:
             return minutes, remaining
     return None, text
 
-# ======================================================================
-# COMPONENT 4: TIME PARSING (RULE) - Giữ nguyên
-# ======================================================================
+# COMPONENT 4: TIME PARSING (RULE)
 def parse_vietnamese_time(time_text: str, base_now: datetime = None) -> datetime:
     """(Rule-based) Chuyển đổi cụm thời gian tiếng Việt sang datetime"""
     if not time_text:
@@ -281,9 +271,7 @@ def parse_vietnamese_time(time_text: str, base_now: datetime = None) -> datetime
     except ValueError:
         return None
 
-# ======================================================================
-# COMPONENT 5: "NHẠC TRƯỞNG" HYBRID - VIẾT LẠI HOÀN TOÀN
-# ======================================================================
+# COMPONENT 5:HYBRID
 def parse_sentence(sentence: str) -> dict:
     """
     Hàm chính (Hybrid): Phân tích câu theo kiến trúc 5 bước
@@ -292,16 +280,16 @@ def parse_sentence(sentence: str) -> dict:
         return {"error": "Câu rỗng."}
     
     try:
-        # === BƯỚC 1: PREPROCESSING (RULE) ===
+        # BƯỚC 1: PREPROCESSING (RULE)
         text = preprocess(sentence)
         
-        # === BƯỚC 2: TRÍCH XUẤT REMINDER (RULE) ===
+        # BƯỚC 2: TRÍCH XUẤT REMINDER (RULE)
         # Ưu tiên Rule cho Reminder vì nó rõ ràng và đáng tin cậy.
         reminder_minutes, text_after_reminder = extract_reminder(text)
         
-        # === BƯỚC 3: TRÍCH XUẤT TIME & LOCATION (HYBRID) ===
+        # BƯỚC 3: TRÍCH XUẤT TIME & LOCATION (HYBRID)
         
-        # -- PLAN A: DÙNG MODEL (underthesea.ner) --
+        # PLAN A: DÙNG MODEL (underthesea.ner)
         # (Component 2: Model-based (NER) để nhận diện thực thể)
         print(f"[Debug] Chạy Model NER trên: '{text_after_reminder}'")
         ner_entities, text_after_ner = extract_ner_entities(text_after_reminder)
@@ -309,7 +297,7 @@ def parse_sentence(sentence: str) -> dict:
         time_str = ner_entities["TIME"][0] if ner_entities["TIME"] else None
         location_str = ner_entities["LOCATION"][0] if ner_entities["LOCATION"] else None
         
-        # -- PLAN B: DÙNG RULE (Fallback) --
+        # PLAN B: DÙNG RULE (Fallback)
         # (Component 3: Rule-based extraction)
         
         # Nếu Model KHÔNG tìm thấy TIME, hãy dùng Rule-based Fallback
@@ -320,7 +308,7 @@ def parse_sentence(sentence: str) -> dict:
             remaining_text = text_after_rule_time # Cập nhật remaining text
         else:
             print(f"[Debug] Model NER tìm thấy TIME: {time_str}")
-            remaining_text = text_after_ner # Model đã dọn dẹp, tin tưởng nó
+            remaining_text = text_after_ner # Model đã dọn dẹp
         
         # Nếu Model KHÔNG tìm thấy LOCATION, hãy dùng Rule-based Fallback
         if not location_str:
@@ -330,10 +318,9 @@ def parse_sentence(sentence: str) -> dict:
         else:
             print(f"[Debug] Model NER tìm thấy LOCATION: {location_str}")
             # Do text_after_ner đã xóa cả TIME và LOCATION,
-            # final_remaining_text chính là text_after_ner
             final_remaining_text = remaining_text 
 
-        # === BƯỚC 4: PARSE THỜI GIAN (RULE) ===
+        # BƯỚC 4: PARSE THỜI GIAN (RULE)
         # (Component 4: Phân tích thời gian)
         if not time_str:
             return {"error": "Không thể xác định thời gian sự kiện."}
@@ -344,7 +331,7 @@ def parse_sentence(sentence: str) -> dict:
         
         start_time_iso = start_time_dt.isoformat()
         
-        # === BƯỚC 5: HỢP NHẤT & LẤY TÊN SỰ KIỆN ===
+        # BƯỚC 5: HỢP NHẤT & LẤY TÊN SỰ KIỆN
         # (Component 5: Hợp nhất & xử lý lỗi)
         
         # Tên sự kiện = phần text cuối cùng còn sót lại
@@ -358,14 +345,14 @@ def parse_sentence(sentence: str) -> dict:
         for word in stop_words:
             # Dùng regex để đảm bảo xóa chính xác (tránh xóa 1 phần của từ)
             event_name = re.sub(r'\b' + re.escape(word) + r'\b', ' ', event_name)
-        
-        event_name = re.sub(r'[,.]', '', event_name)
+            
+        event_name = event_name.strip(' ,.;:')
         event_name = re.sub(r'\s+', ' ', event_name).strip()
         
         if not event_name or len(event_name.strip()) == 0:
             return {"error": "Không thể xác định tên sự kiện."}
         
-        # === BƯỚC 6: TRẢ VỀ KẾT QUẢ ===
+        # BƯỚC 6: TRẢ VỀ KẾT QUẢ
         return {
             "event": event_name,
             "start_time": start_time_iso,
@@ -378,9 +365,8 @@ def parse_sentence(sentence: str) -> dict:
         print(f"[LỖI NGHIÊM TRỌNG] {e}")
         return {"error": f"Lỗi xử lý: {str(e)}"}
 
-# ======================================================================
+
 # TEST CASES
-# ======================================================================
 if __name__ == "__main__":
     test_cases = [
         # Case 1: Model NER hoạt động TỐT (NER nên tìm thấy "10 giờ sáng mai" và "phòng 302")
@@ -403,6 +389,8 @@ if __name__ == "__main__":
         "Sinh nhật bạn thứ 7 tới 6h tối ở nhà hàng ABC nhắc trước 60 phút",
         # Case 10: Model NER TỐT (NER nên thấy "9h sáng thứ 5 tuần sau")
         "Họp với sếp 9h sáng thứ 5 tuần sau",
+        
+        "hop nhom 2h chieu thu 3 toi"
     ]
     
     print("=" * 80)

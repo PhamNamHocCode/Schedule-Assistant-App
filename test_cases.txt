@@ -1,0 +1,43 @@
+# Nhóm 1: Các ca "Happy Path" (Model NER nên hoạt động tốt)
+Nhắc tôi họp nhóm lúc 10 giờ sáng mai ở phòng 302, nhắc trước 15 phút
+Đi cafe với bạn thứ hai tới lúc 8h tối
+Họp team 9h30 sáng mai tại văn phòng
+Sinh nhật bạn thứ 7 tới 6h tối ở nhà hàng ABC nhắc trước 60 phút
+
+# Nhóm 2: Các ca "Model-NER Thất Bại" (Kích hoạt Rule-Fallback)
+Họp nhóm 10 sáng mai, ở phòng 302, nhắc trước 15p
+Gặp khách hàng thứ 6 này 2h chiều nhắc 30 phút
+Đi gym cuối tuần 7h sáng
+Họp với sếp 9h sáng thứ 5 tuần sau
+
+# Nhóm 3: Logic thời gian phức tạp
+Đi công tác ngày kia 8h sáng
+Học bài 3h chiều chủ nhật tuần tới
+Họp 2h chiều thứ 3
+Làm bài tập 11h tối nay
+Gọi điện về nhà 8h tối
+Họp báo cáo sáng mai
+
+# Nhóm 4: Xử lý Tiếng Việt (Không dấu & Viết tắt)
+hop nhom 2h chieu thu 3 toi
+Di choi voi ban 10h sang mai
+goi dien cho sep 4h chieu nay, nhac 5p
+Họp 3h chiều t2 tuần tới
+Đi lễ 8h sáng cn này
+
+# Nhóm 5: Đảo cấu trúc câu
+Nhắc 10 phút, họp phòng nhân sự 3h chiều mai
+Thứ 6 này 11h trưa đi ăn với đồng nghiệp
+Ở công ty, 9h sáng mai họp toàn thể
+
+# Nhóm 6: Các ca Lỗi (Edge Cases)
+Họp ở phòng 302
+Nhắc tôi đi ngủ
+10h sáng mai
+Đi chơi
+
+# Nhóm 7: Kiểm tra giới hạn (Stress Test)
+Họp lúc 10h15 sáng mai
+Họp 10h 15 sáng mai
+Gọi điện cho mẹ 8h tối, nhắc trước 1 giờ
+Họp lúc 10h sáng mai ở phòng 302 và đi ăn lúc 12
