@@ -1,6 +1,9 @@
 import re
 from datetime import datetime, timedelta
 from underthesea import word_tokenize, ner
+import re
+from datetime import datetime, timedelta
+from underthesea import word_tokenize, ner
 from dateutil.parser import parse as dateutil_parse
 
 def preprocess(text: str) -> str:
@@ -10,12 +13,12 @@ def preprocess(text: str) -> str:
     
     # BƯỚC 1: Xử lý các cụm từ cố định trước (có dấu)
     replacements_with_space = {
-        'thứ 2': 'thứ_hai', 'thứ hai': 'thứ_hai', 'thu 2': 'thứ_hai',
-        'thứ 3': 'thứ_ba', 'thứ ba': 'thứ_ba', 'thu 3': 'thứ_ba',
+        'thứ 2': 'thứ_hai', 'thu 2': 'thứ_hai', 'thứ hai': 'thứ_hai', 'thu hai': 'thứ_hai',
+        'thứ 3': 'thứ_ba', 'thu 3': 'thứ_ba', 'thứ ba': 'thứ_ba', 'thu ba': 'thứ_ba',
         'thứ 4': 'thứ_tư', 'thứ tư': 'thứ_tư', 'thu 4': 'thứ_tư', 'thu tu': 'thứ_tư',
         'thứ 5': 'thứ_năm', 'thứ năm': 'thứ_năm', 'thu 5': 'thứ_năm', 'thu nam': 'thứ_năm',
-        'thứ 6': 'thứ_sáu', 'thứ sáu': 'thứ_sáu', 'thu 6': 'thứ_sáu', 
-        'thứ 7': 'thứ_bảy', 'thứ bảy': 'thứ_bảy', 'thu 7': 'thứ_bảy', 
+        'thứ 6': 'thứ_sáu', 'thứ sáu': 'thứ_sáu', 'thu 6': 'thứ_sáu', 'thu sau': 'thứ_sáu',
+        'thứ 7': 'thứ_bảy', 'thứ bảy': 'thứ_bảy', 'thu 7': 'thứ_bảy', 'thu bay': 'thứ_bảy',
         'chủ nhật': 'chủ_nhật', 'chu nhat': 'chủ_nhật', 'cn': 'chủ_nhật',
         'ngày mai': 'ngày_mai', 'ngay mai': 'ngày_mai',
         'hôm nay': 'hôm_nay', 'hom nay': 'hôm_nay',
@@ -38,10 +41,8 @@ def preprocess(text: str) -> str:
         r'\bhop\b': 'họp',
         r'\bnhom\b': 'nhóm',
         r'\bchieu\b': 'chiều',
-        r'\btoi\b': 'tới',  # "toi" có thể là "tới" hoặc "tôi"
+        r'\btoi\b': 'tới',
         r'\bsang\b': 'sáng',
-        r'\bthu sau\b': 'thứ_sáu',
-        r'\bthu bay\b': 'thứ_bảy',
     }
     
     for pattern, replacement in no_tone_replacements.items():
@@ -53,8 +54,17 @@ def preprocess(text: str) -> str:
     return text
 
 def extract_time_info(text: str) -> tuple[str, str]:
-    """Trích xuất cụm thời gian từ text, trả về (time_string, remaining_text)"""
-    # Pattern mở rộng để bắt toàn bộ cụm thời gian
+    """Trích xuất cụm thời gian từ `text`.
+
+    Thay vì dùng `replace` để loại bỏ chuỗi khớp (có thể dẫn tới xóa nhầm
+    khi có nhiều phần giống nhau), hàm này dùng vị trí (span) của match để
+    cắt chính xác phần thời gian khỏi chuỗi gốc. Tìm kiếm sẽ không phân biệt
+    hoa thường (`re.IGNORECASE`).
+
+    Trả về: (time_string, remaining_text) hoặc (None, text) nếu không tìm thấy.
+    """
+
+    # Pattern mở rộng để bắt toàn bộ cụm thời gian (ưu tiên các cụm đầy đủ trước)
     time_patterns = [
         # Giờ cụ thể + buổi + ngày + tuần: "10h sáng thứ_năm tuần_sau"
         r'(\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2}\s*(?:sáng|sang|trưa|trua|chiều|chieu|tối|toi)?\s*(?:ngày_mai|mai|hôm_nay|nay|ngày_kia|kia|thứ_\w+|chủ_nhật)?\s*(?:tuần_sau|tuần_tới|tới|toi|này|nay|sau)?)',
@@ -64,29 +74,42 @@ def extract_time_info(text: str) -> tuple[str, str]:
         r'((?:thứ_\w+|chủ_nhật|cuối_tuần)\s*(?:tuần_sau|tuần_tới)?\s*(?:\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2})?)',
         # Chỉ ngày + tuần: "thứ_năm tuần_sau", "thứ_năm tuần_tới"
         r'((?:thứ_\w+|chủ_nhật|cuối_tuần)\s+(?:tuần_sau|tuần_tới))',
-        # Tuần: "tuần_sau", "tuần_tới"
+        # Tuần đơn lẻ: "tuần_sau", "tuần_tới"
         r'(tuần_sau|tuần_tới)',
         # Chỉ ngày: "thứ_hai tới", "cuối_tuần", "thứ_năm"
         r'((?:thứ_\w+|chủ_nhật|cuối_tuần)\s*(?:tới|toi|này|nay|sau)?)',
         # Chỉ giờ: "10h", "8h30"
         r'(\d{1,2}\s*(?:h|giờ|gio|:)\s*\d{0,2})',
     ]
-    
-    time_match = None
-    time_str = None
-    
+
+    flags = re.IGNORECASE
+
     for pattern in time_patterns:
-        time_match = re.search(pattern, text)
-        if time_match:
-            time_str = time_match.group(1).strip()
-            break
-    
-    if time_str:
-        remaining = text.replace(time_str, '', 1)
+        m = re.search(pattern, text, flags)
+        if not m:
+            continue
+
+        # Lấy chuỗi khớp ưu tiên (group 1 nếu tồn tại, ngược lại group 0)
+        try:
+            time_str = m.group(1) if m.groups() else m.group(0)
+        except IndexError:
+            time_str = m.group(0)
+
+        # Lấy span tương ứng với nhóm đã lấy (nếu group(1) không tồn tại, dùng span(0))
+        if m.groups():
+            start, end = m.span(1)
+        else:
+            start, end = m.span(0)
+
+        # Cắt chính xác phần thời gian khỏi chuỗi (dùng span để tránh xóa nhầm)
+        remaining = text[:start] + text[end:]
         remaining = re.sub(r'\s+', ' ', remaining).strip()
-        return time_str, remaining
-    
+
+        return time_str.strip(), remaining
+
     return None, text
+
+    
 
 def extract_location(text: str) -> tuple[str, str]:
     """Trích xuất địa điểm, trả về (location, remaining_text)"""
