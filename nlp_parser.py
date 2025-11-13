@@ -65,13 +65,22 @@ def extract_ner_entities(text: str) -> (dict, str):
 def extract_rule_entities(original_text: str, remaining_text: str) -> dict:
     rules ={}
 
-    reminder_match = re.search(r"nhắc trước (\d+) phút", remaining_text)
-    if reminder_match:
-        rules["reminder_minutes"] = int (reminder_match.group(1))
-        remaining_text = remaining_text.replace(reminder_match.group(0), "")
-    else:
-        rules["reminder_minutes"] = None
+    # group(1) = (nhắc trước|nhắc|...)
+    # group(2) = (\d+)  số phút
+    # group(3) = (phút|phut|p)
+    reminder_match = re.search(r"(nhắc trước|nhắc|nhac|nhac truoc|nhac trc) (\d+) ?(phút|phut|p)", remaining_text)
     
+    if reminder_match:
+        try:
+            rules["reminder_minutes"] = int (reminder_match.group(2)) 
+            
+            remaining_text = remaining_text.replace(reminder_match.group(0), "")
+        except (ValueError, IndexError):
+            rules["reminder_minutes"] = None
+    else:
+        rules["reminder_minutes"] = None 
+    
+    # Phần còn lại của hàm
     event_name = remaining_text.replace("ở", "").replace("tại", "").replace("lúc", "").strip()
     event_name = " ".join(event_name.split())
 
@@ -149,6 +158,10 @@ def parse_vietnamese_time(time_text: str) -> datetime:
                  time_match_simple_gio = re.search(r"(\d{1,2}) giờ", text) # 10 giờ
                  if time_match_simple_gio:
                     hour = int(time_match_simple_gio.group(1))
+                 else:
+                    time_match_standalone = re.search(r"(\d{1,2}) (sáng|trưa|chiều|tối)", text)
+                    if time_match_standalone:
+                        hour = int(time_match_standalone.group(1))
     
     if hour is None:
         if "sáng" in text: hour = 9
