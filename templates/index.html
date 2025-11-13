@@ -1,0 +1,172 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trợ lý Lịch trình</title>
+    <!-- Bootstrap CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- FullCalendar CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <style>
+        #calendar {
+            height: 600px;
+        }
+        .fc .fc-button {
+            text-transform: capitalize;
+        }
+    </style>
+</head>
+<body class="container-fluid">
+    <h1 class="text-center">🗓️ Trợ lý Quản lý Lịch trình Cá nhân</h1>
+    
+    <!-- Khung nhập liệu NLP -->
+    <h2>Thêm sự kiện nhanh</h2>
+    <form action="{{ url_for('add_event') }}" method="post">
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" name="nlp_input" placeholder="VD: Họp nhóm 10h sáng mai ở phòng 302, nhắc trước 15 phút">
+            <button class="btn btn-primary" type="submit">Thêm sự kiện</button>
+        </div>
+    </form>
+    <hr>
+    
+    <!-- Lịch -->
+    <h2>Lịch của bạn</h2>
+    <div id="calendar"></div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendarEl = document.getElementById('calendar');
+            var events = JSON.parse("{{ events_json | tojson | safe }}");
+
+            // Fallback for invalid or empty events_json
+            if (!Array.isArray(events)) {
+                console.error("Invalid events_json, defaulting to empty array.");
+                events = [];
+            }
+
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                },
+                initialView: 'dayGridMonth',
+                selectable: true,
+                editable: true,
+                events: events
+            });
+            calendar.render();
+        });
+    </script>
+    <hr>
+    
+    <!-- Danh sách & Quản lý Sự kiện -->
+    <h2>Danh sách & Quản lý Sự kiện</h2>
+    {% if not events %}
+        <div class="alert alert-info">Bạn chưa có sự kiện nào trong lịch.</div>
+    {% else %}
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Sự kiện</th>
+                    <th>Thời gian</th>
+                    <th>Địa điểm</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in events[::-1] %}
+                    {% if editing_event_id == event.id %}
+                        <tr>
+                            <td colspan="5">
+                                <h3>Chỉnh sửa sự kiện: {{ edited_event.event.capitalize() }}</h3>
+                                <form action="{{ url_for('update_event', event_id=editing_event_id) }}" method="post">
+                                    <div class="mb-3">
+                                        <label class="form-label">Tên sự kiện</label>
+                                        <input type="text" class="form-control" name="event" value="{{ edited_event.event }}">
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col">
+                                            <label class="form-label">Ngày bắt đầu</label>
+                                            <input type="date" class="form-control" name="start_date" value="{{ edited_event.start_date }}">
+                                        </div>
+                                        <div class="col">
+                                            <label class="form-label">Giờ bắt đầu</label>
+                                            <input type="time" class="form-control" name="start_time" value="{{ edited_event.start_time_of_day }}">
+                                        </div>
+                                        <div class="col">
+                                            <label class="form-label">Ngày kết thúc</label>
+                                            <input type="date" class="form-control" name="end_date" value="{{ edited_event.end_date }}">
+                                        </div>
+                                        <div class="col">
+                                            <label class="form-label">Giờ kết thúc</label>
+                                            <input type="time" class="form-control" name="end_time" value="{{ edited_event.end_time_of_day }}">
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Địa điểm</label>
+                                        <input type="text" class="form-control" name="location" value="{{ edited_event.get('location', '') }}">
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col">
+                                            <label class="form-label">Giờ (nhắc trước)</label>
+                                            <input type="number" class="form-control" name="remind_hours" min="0" value="{{ edited_event.remind_hours }}">
+                                        </div>
+                                        <div class="col">
+                                            <label class="form-label">Phút (nhắc trước)</label>
+                                            <input type="number" class="form-control" name="remind_minutes" min="0" max="59" step="5" value="{{ edited_event.remind_minutes }}">
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-success">Lưu thay đổi</button>
+                                    <a href="{{ url_for('cancel_edit') }}" class="btn btn-secondary">Hủy</a>
+                                </form>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td>
+                                <strong>{{ event.event.capitalize() }}</strong><br>
+                                <small>Nhắc trước: {{ event.get('reminder_minutes', 0) }} phút</small>
+                            </td>
+                            <td>
+                                <strong>Bắt đầu:</strong> {{ event.start_time }}<br>
+                                <strong>Kết thúc:</strong> {{ event.end_time_display }}
+                            </td>
+                            <td>{{ event.get('location', 'N/A') }}</td>
+                            <td>
+                                <form action="{{ url_for('edit_event', event_id=event.id) }}" method="get">
+                                    <button type="submit" class="btn btn-secondary">Sửa</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form action="{{ url_for('delete_event_route', event_id=event.id) }}" method="post">
+                                    <button type="submit" class="btn btn-danger">Xóa</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+    
+    <!-- Toast container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+            <div class="toast {{ 'bg-success text-white' if category == 'success' else 'bg-danger text-white' if category == 'error' else 'bg-warning' }}" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header">
+                    <strong class="me-auto">Thông báo</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body">
+                    {{ message }}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
