@@ -1,3 +1,5 @@
+# nlp_parser.py (ĐÃ KHẮC PHỤC HOÀN CHỈNH)
+
 import re
 from datetime import datetime, timedelta
 from underthesea import word_tokenize, ner
@@ -70,16 +72,22 @@ def extract_ner_entities(text: str) -> (dict, str):
     
     return entities, remaining_text   
 
+#
+# --- BẮT ĐẦU PHẦN ĐƯỢC THAY THẾ ---
+#
 def extract_rule_entities(original_text: str, remaining_text: str) -> dict:
-    # <--- THAY ĐỔI (Default reminder = 0, thêm duration)
+    # <--- KHẮC PHỤC LOGIC NLP ---
     rules = {
         "reminder_minutes": 0,
         "duration_minutes": None
     }
 
-    # 1. Trích xuất nhắc nhở (Reminder) - Nâng cấp
-    # <--- THAY ĐỔI (Xử lý "giờ", "tiếng", "phút" và "một")
+    # 1. Trích xuất nhắc nhở (Reminder)
     reminder_match = re.search(r"nhắc trước (\d+|một) (phút|giờ|tiếng)", remaining_text)
+    if not reminder_match:
+         # Thử tìm ở câu gốc nếu nó bị NER xóa mất
+         reminder_match = re.search(r"nhắc trước (\d+|một) (phút|giờ|tiếng)", original_text)
+
     if reminder_match:
         value_str = reminder_match.group(1)
         value = 1 if value_str == "một" else int(value_str)
@@ -89,11 +97,14 @@ def extract_rule_entities(original_text: str, remaining_text: str) -> dict:
             value *= 60 # Chuyển đổi giờ sang phút
         
         rules["reminder_minutes"] = value
+        # Xóa khỏi remaining_text để không bị lẫn vào tên sự kiện
         remaining_text = remaining_text.replace(reminder_match.group(0), "")
     
-    # 2. Trích xuất thời lượng (Duration) - MỚI
-    # <--- MỚI (Xử lý "trong X giờ/phút")
+    # 2. Trích xuất thời lượng (Duration)
     duration_match = re.search(r"trong (\d+|một) (phút|giờ|tiếng)", remaining_text)
+    if not duration_match:
+        duration_match = re.search(r"trong (\d+|một) (phút|giờ|tiếng)", original_text)
+
     if duration_match:
         value_str = duration_match.group(1)
         value = 1 if value_str == "một" else int(value_str)
@@ -105,12 +116,46 @@ def extract_rule_entities(original_text: str, remaining_text: str) -> dict:
         rules["duration_minutes"] = value
         remaining_text = remaining_text.replace(duration_match.group(0), "")
 
-    # 3. Trích xuất tên sự kiện
-    event_name = remaining_text.replace("ở", "").replace("tại", "").replace("lúc", "").strip()
+    # 3. Trích xuất tên sự kiện (LOGIC AN TOÀN HƠN)
+    event_name = remaining_text.strip()
+    
+    # Xóa các từ "trigger" (như nhắc tôi, đi) ở đầu câu
+    event_name = re.sub(r"^(nhắc tôi|nhắc|gọi|hẹn|đi|làm|học|có|họp)", "", event_name, flags=re.IGNORECASE).strip()
+    
+    # Xóa các từ nối "mồ côi" (lúc, ở, tại) do NER để lại
+    # chỉ khi chúng đứng ở CUỐI chuỗi (an toàn hơn .replace() toàn bộ)
+    event_name = re.sub(r"\s+(lúc|tại|ở)\s*$", "", event_name).strip()
+    
+    # Dọn dẹp dấu phẩy hoặc khoảng trắng thừa ở đầu/cuối
+    event_name = event_name.strip(" ,")
+    
+    # Dọn dẹp khoảng trắng kép
     event_name = " ".join(event_name.split())
+    
+    # Nếu tên sự kiện rỗng, thử lấy từ câu gốc (trường hợp NER quá hung hăng)
+    if not event_name:
+        temp_name = original_text
+        for time_str in entities["TIME"]:
+            temp_name = temp_name.replace(time_str, "")
+        for loc_str in entities["LOCATION"]:
+            temp_name = temp_name.replace(loc_str, "")
+        if reminder_match:
+            temp_name = temp_name.replace(reminder_match.group(0), "")
+        if duration_match:
+            temp_name = temp_name.replace(duration_match.group(0), "")
+        
+        temp_name = re.sub(r"^(nhắc tôi|nhắc|gọi|hẹn|đi|làm|học|có|họp)", "", temp_name, flags=re.IGNORECASE).strip()
+        temp_name = re.sub(r"\s+(lúc|tại|ở)\s*$", "", temp_name).strip()
+        temp_name = temp_name.strip(" ,")
+        event_name = " ".join(temp_name.split())
+
+
     rules["event"] = event_name if event_name else None
     
     return rules
+#
+# --- KẾT THÚC PHẦN ĐƯỢC THAY THẾ ---
+#
     
 
 def parse_vietnamese_time(time_text: str) -> datetime:
@@ -257,6 +302,7 @@ def parse_sentence(sentence: str) -> dict:
     ner_entities, remaining_text = extract_ner_entities(text)
     
     # 3. Rule-based Extraction (Đã được nâng cấp)
+    # KHẮC PHỤC: Truyền cả câu gốc (text) vào để tìm reminder/duration
     rule_entities = extract_rule_entities(text, remaining_text)
 
     # 4. Time Parsing

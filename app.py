@@ -5,13 +5,16 @@ import queue
 from datetime import datetime, timedelta
 from datetime import time as dt_time
 import json
+import os  # KHẮC PHỤC: Thêm import os
+import html # KHẮC PHỤC: Thêm import html
 
 # Import các module cốt lõi của bạn
 import nlp_parser
 from Database import database as db
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Thay đổi thành key bí mật thực tế
+# KHẮC PHỤC BẢO MẬT: Sử dụng secret key an toàn
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 # --- 1. HỆ THỐNG NHẮC NHỞ (BACKGROUND THREAD) ---
 notification_queue = queue.Queue()
@@ -20,10 +23,11 @@ def reminder_checker(notif_queue):
     print("Luồng nhắc nhở đã bắt đầu...")
     while True:
         try:
-            now_iso = datetime.now().isoformat()
+            # KHẮC PHỤC LỖI DB: Chuyển sang định dạng SQLite-friendly (YYYY-MM-DD HH:MM:SS)
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             # 1. KIỂM TRA: Gọi DB để tìm sự kiện cần nhắc
-            events_to_notify = db.get_events_to_notify(now_iso)
+            events_to_notify = db.get_events_to_notify(now_str)
             
             for event in events_to_notify:
                 # 2. GỬI THÔNG BÁO: Đẩy tên sự kiện vào "hàng đợi"
@@ -50,22 +54,30 @@ def index():
     all_events_db = db.get_all_events()
     app.logger.info(f"Dữ liệu sự kiện từ cơ sở dữ liệu: {all_events_db}")
 
-    # Chuẩn bị dữ liệu cho lịch
+    # Chuẩn bị dữ liệu cho lịch (Python list)
     calendar_events = []
     for event in all_events_db:
         try:
-            start_dt = datetime.fromisoformat(event['start_time'])
+            # KHẮC PHỤC LỖI DB: Đọc từ định dạng 'YYYY-MM-DD HH:MM:SS'
+            start_dt = datetime.strptime(event['start_time'], '%Y-%m-%d %H:%M:%S')
+            # JavaScript (FullCalendar) cần định dạng ISO 8601
+            start_iso_for_js = start_dt.isoformat() 
         except (ValueError, TypeError):
             continue  # Bỏ qua sự kiện lỗi
 
         if event['end_time']:
-            end_dt_iso = event['end_time']
+            try:
+                # KHẮC PHỤC LỖI DB: Đọc từ định dạng 'YYYY-MM-DD HH:MM:SS'
+                end_dt = datetime.strptime(event['end_time'], '%Y-%m-%d %H:%M:%S')
+                end_dt_iso = end_dt.isoformat() # JS cần ISO
+            except (ValueError, TypeError):
+                end_dt_iso = (start_dt + timedelta(hours=1)).isoformat()
         else:
             end_dt_iso = (start_dt + timedelta(hours=1)).isoformat()
 
         calendar_events.append({
             "title": event['event'].capitalize(),
-            "start": event['start_time'],
+            "start": start_iso_for_js,
             "end": end_dt_iso,
             "extendedProps": {
                 "id": event['id'],
@@ -73,21 +85,17 @@ def index():
                 "reminder": f"{event['reminder_minutes']} phút trước"
             }
         })
-
-    try:
-        events_json = json.dumps(calendar_events)
-    except (TypeError, ValueError) as e:
-        events_json = "[]"  # Mặc định là mảng JSON rỗng nếu phân tích cú pháp thất bại
-        app.logger.error(f"Lỗi khi phân tích sự kiện thành JSON: {e}")
-
-    # Chuẩn bị dữ liệu cho danh sách sự kiện
+        
+    # Chuẩn bị dữ liệu cho danh sách sự kiện (hiển thị table)
     events = []
     for event in all_events_db:
         ev = event.copy()
         try:
-            start_dt = datetime.fromisoformat(ev['start_time'])
+            # KHẮC PHỤC LỖI DB: Đọc từ định dạng 'YYYY-MM-DD HH:MM:SS'
+            start_dt = datetime.strptime(ev['start_time'], '%Y-%m-%d %H:%M:%S')
             if ev['end_time']:
-                end_time_display = ev['end_time']
+                end_dt = datetime.strptime(ev['end_time'], '%Y-%m-%d %H:%M:%S')
+                end_time_display = end_dt.isoformat()
             else:
                 end_time_display = (start_dt + timedelta(hours=1)).isoformat() + " (Tự động)"
         except ValueError:
@@ -105,7 +113,8 @@ def index():
                 break
         if edited_event:
             try:
-                start_dt = datetime.fromisoformat(edited_event['start_time'])
+                # KHẮC PHỤC LỖI DB: Đọc từ định dạng 'YYYY-MM-DD HH:MM:SS'
+                start_dt = datetime.strptime(edited_event['start_time'], '%Y-%m-%d %H:%M:%S')
             except ValueError:
                 start_dt = datetime.now()
             edited_event['start_date'] = start_dt.date().isoformat()
@@ -113,7 +122,7 @@ def index():
 
             if edited_event['end_time']:
                 try:
-                    end_dt = datetime.fromisoformat(edited_event['end_time'])
+                    end_dt = datetime.strptime(edited_event['end_time'], '%Y-%m-%d %H:%M:%S')
                 except ValueError:
                     end_dt = start_dt + timedelta(hours=1)
             else:
@@ -129,14 +138,17 @@ def index():
     reminder_messages = []
     while not notification_queue.empty():
         event_name = notification_queue.get()
-        reminder_messages.append(f"🔔 Nhắc nhở: {event_name} sắp diễn ra!")
+        # KHẮC PHỤC LỖ HỔNG XSS: Escape tên sự kiện trước khi hiển thị
+        safe_event_name = html.escape(event_name)
+        reminder_messages.append(f"🔔 Nhắc nhở: {safe_event_name} sắp diễn ra!")
 
     return render_template(
         'index.html',
         events=events,
         editing_event_id=editing_event_id,
         edited_event=edited_event,
-        events_json=events_json,
+        # KHẮC PHỤC JAVASCRIPT: Truyền list Python trực tiếp
+        calendar_events=calendar_events,
         reminder_messages=reminder_messages
     )
 
@@ -149,8 +161,21 @@ def add_event():
             flash(f"Lỗi phân tích: {parsed_data['error']}", 'error')
         else:
             try:
+                # KHẮC PHỤC LỖI DB: Chuyển đổi thời gian (từ ISO) sang định dạng SQLite-friendly
+                if parsed_data.get('start_time'):
+                    start_dt = datetime.fromisoformat(parsed_data['start_time'])
+                    parsed_data['start_time'] = start_dt.strftime('%Y-%m-%d %H:%M:%S')
+                
+                if parsed_data.get('end_time'):
+                    end_dt = datetime.fromisoformat(parsed_data['end_time'])
+                    parsed_data['end_time'] = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+
                 event_id = db.add_event(parsed_data)
-                flash(f"✅ Đã thêm: '{parsed_data['event']}'", 'success')
+                
+                # KHẮC PHỤC LỖ HỔNG XSS: Escape tên sự kiện trước khi flash
+                safe_event_name = html.escape(parsed_data.get('event', ''))
+                flash(f"✅ Đã thêm: '{safe_event_name}'", 'success')
+                
             except Exception as e:
                 flash(f"Lỗi khi thêm vào database: {e}", 'error')
     else:
@@ -177,7 +202,9 @@ def update_event(event_id):
     start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
     start_time = dt_time.fromisoformat(start_time_str)
     start_dt = datetime.combine(start_date, start_time)
-    updated_data['start_time'] = start_dt.isoformat()
+    
+    # KHẮC PHỤC LỖI DB: Lưu ở định dạng SQLite-friendly
+    updated_data['start_time'] = start_dt.strftime('%Y-%m-%d %H:%M:%S')
     
     end_date_str = request.form['end_date']
     end_time_str = request.form['end_time']
@@ -189,10 +216,9 @@ def update_event(event_id):
         flash("Ngày kết thúc phải bằng hoặc lớn hơn ngày bắt đầu.", 'error')
         return redirect(url_for('index'))
     else:
-        if end_dt == start_dt + timedelta(hours=1):
-            updated_data['end_time'] = None
-        else:
-            updated_data['end_time'] = end_dt.isoformat()
+        # KHẮC PHỤC LỖI LOGIC: Xóa logic "1 giờ = None" sai lầm
+        # KHẮC PHỤC LỖI DB: Lưu ở định dạng SQLite-friendly
+        updated_data['end_time'] = end_dt.strftime('%Y-%m-%d %H:%M:%S')
     
     updated_data['location'] = request.form['location']
     
@@ -210,7 +236,10 @@ def delete_event_route(event_id):
     event = next((e for e in db.get_all_events() if e['id'] == event_id), None)
     if event:
         db.delete_event(event_id)
-        flash(f"❌ Đã xóa sự kiện: {event['event']}", 'success')
+        
+        # KHẮC PHỤC LỖ HỔNG XSS: Escape tên sự kiện trước khi flash
+        safe_event_name = html.escape(event['event'])
+        flash(f"❌ Đã xóa sự kiện: {safe_event_name}", 'success')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
